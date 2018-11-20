@@ -6,17 +6,12 @@ import android.databinding.Bindable
 import android.view.View
 import com.dekoservidoni.drinksearchwithcoroutines.BR
 import com.dekoservidoni.drinksearchwithcoroutines.BaseViewModel
-import com.dekoservidoni.drinksearchwithcoroutines.data.DrinksNetwork
 import com.dekoservidoni.drinksearchwithcoroutines.models.Drink
 import com.dekoservidoni.drinksearchwithcoroutines.models.status.SearchStatus
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
 import javax.inject.Inject
-import kotlin.coroutines.CoroutineContext
 
-class MainViewModel @Inject constructor(private val network: DrinksNetwork): BaseViewModel(), CoroutineScope {
+class MainViewModel @Inject constructor(private val repository: MainRepository) : BaseViewModel() {
 
     private var contentVisibility = View.GONE
     private var progressVisibility = View.GONE
@@ -27,9 +22,6 @@ class MainViewModel @Inject constructor(private val network: DrinksNetwork): Bas
     val data: LiveData<SearchStatus<List<Drink>>>
         get() = _data
 
-    override val coroutineContext: CoroutineContext
-        get() = Dispatchers.IO
-
     override fun onCleared() {
         super.onCleared()
         job?.cancel()
@@ -37,7 +29,15 @@ class MainViewModel @Inject constructor(private val network: DrinksNetwork): Bas
 
     fun search(terms: String) {
         showLoading(true)
-        job = doSearch(terms)
+        job = repository.doSearch(terms,
+            success = {
+                _data.postValue(SearchStatus.Success(it))
+                showLoading(false)
+            },
+            error = {
+                _data.postValue(SearchStatus.Error(errorCode = 0, error = it))
+                showLoading(false)
+            })
     }
 
     /// Bindable methods
@@ -50,27 +50,10 @@ class MainViewModel @Inject constructor(private val network: DrinksNetwork): Bas
 
     /// Private methods
 
-    private fun doSearch(terms: String) = launch {
-
-        try {
-            val task = network.searchDrinks(terms)
-            val result = task.await()
-
-            showLoading(false)
-
-            when(result.isSuccessful) {
-                true -> result.body()?.let { _data.postValue(SearchStatus.Success(it.drinks)) }
-                false -> _data.postValue(SearchStatus.Error(errorCode = 0, error = result.message()))
-            }
-
-        } catch (ex: Exception) {
-            _data.postValue(SearchStatus.Error(errorCode = 0, error = ex.localizedMessage))
-        }
-    }
 
     private fun showLoading(show: Boolean) {
-        contentVisibility = if(show) View.GONE else View.VISIBLE
-        progressVisibility = if(show) View.VISIBLE else View.GONE
+        contentVisibility = if (show) View.GONE else View.VISIBLE
+        progressVisibility = if (show) View.VISIBLE else View.GONE
 
         notifyPropertyChanged(BR.contentVisibility)
         notifyPropertyChanged(BR.progressVisibility)
